@@ -6,8 +6,15 @@ Engine-specific decisions, ongoing notes, and outstanding follow-ups for this fo
 
 ### License conversation with upstream
 - **Status:** open
-- **Why it matters:** `dylandersen/salesforce-mock-data-gen` has no license file. Until a license exists upstream, sending code-PRs back to Dylan's repo is legally murky. Issues are fine; PRs are not.
-- **Next action:** reach out to Dylan to discuss a permissive license (MIT or Apache-2.0 likely fits). Until resolved, the contribute-back loop scopes to this fork's `main` only.
+- **Why it matters:** `dylandersen/salesforce-mock-data-gen` has no `LICENSE` file. With no license, GitHub's terms of service grant viewing and forking only — they do not grant explicit modify/redistribute/contribute-back rights. The fork itself is fine (forking is permitted), but distributing engine code into customer projects sits in a legal gray area, and sending PRs back to Dylan's repo lacks a defined contribution license on either side.
+- **Stance:** strict. **No upstream PRs to `dylandersen/salesforce-mock-data-gen` and no upstream Issues until the license conversation is resolved.** The cost of waiting is small; the cost of an awkward upstream interaction is real.
+- **Next action:** reach out to Dylan personally to discuss adding a permissive license (MIT or Apache-2.0 most common for Salesforce work). Five minutes of his time once he's convinced. After that, contributions flow in both directions cleanly.
+
+### Candidate upstream contributions (pending license)
+Track items here that are ready to send upstream once the license conversation completes.
+
+- **Scoped engine deploy manifest** (`manifest/engine-package.xml`, commit `73b8471`) — Dylan's existing `manifest/package.xml` is generic boilerplate with `*` wildcards across types the engine doesn't even use. The scoped manifest is a real improvement; cherry-pickable as a clean upstream PR.
+- **RFP_Analysis cleanup** (commit `031aec6`) — should be a GitHub Issue first ("noticed RFP_Analysis references a Flow that isn't in the repo, was it meant to be included?"), not a deletion PR. Dylan may have the missing Flow locally and just hasn't committed it. Let him decide what action to take.
 
 ### Phase 0 — install-mechanism spike (CP-0)
 - **Status:** open
