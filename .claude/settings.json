@@ -1,0 +1,56 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sf *)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)",
+      "Bash(git fetch:*)",
+      "Bash(git restore:*)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(gh api:*)",
+      "Bash(python scripts/*)",
+      "Bash(python3 scripts/*)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(tree:*)",
+      "mcp__plugin_slack_slack__slack_search_public_and_private",
+      "mcp__plugin_slack_slack__slack_search_public",
+      "mcp__plugin_codesearch_codesearch__search",
+      "mcp__plugin_search_search__search",
+      "mcp__plugin_slack_slack__slack_read_canvas",
+      "mcp__plugin_browser_browser__browser_screenshot",
+      "mcp__plugin_google_google__docs_search",
+      "mcp__plugin_browser_browser__browser_navigate",
+      "mcp__plugin_browser_browser__browser_wait",
+      "mcp__plugin_browser_browser__browser_list_tabs",
+      "mcp__plugin_slack_slack__slack_search_channels"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); fp=$(printf '%s' \"$input\" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty'); [ -z \"$fp\" ] && exit 0; case \"$fp\" in /*) abs=\"$fp\" ;; *) abs=\"$PWD/$fp\" ;; esac; root=\"/Users/j.schneider/Documents/VS Salesforce/Boilerplate\"; case \"$abs\" in \"$root\"/*) ;; *) exit 0 ;; esac; branch=$(git -C \"$root\" branch --show-current 2>/dev/null); [ \"$branch\" = \"main\" ] && jq -n '{hookSpecificOutput: {hookEventName: \"PreToolUse\", permissionDecision: \"deny\", permissionDecisionReason: \"Boilerplate edits on main are blocked.\\n\\nCreate a maintenance branch first:\\n  git switch -c bp/rollout/v<version>   # releases\\n  git switch -c bp/maintenance/<slug>   # fixes\\n\\nEmergency bypass: switch branches, or set disableAllHooks: true in .claude/settings.local.json.\"}}'; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
