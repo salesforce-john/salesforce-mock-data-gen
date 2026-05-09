@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+    Scoped engine deploy manifest for salesforce-mock-data-gen.
+
+    Use this manifest (NOT the generic package.xml) when deploying the engine
+    into a customer demo project. Excludes:
+      - Apex *Test classes (not required for demo deploys)
+      - RFP_Analysis plugin and Launch_RFP_Analysis_Flow function (orphan
+        capability, references a Flow not present in this repo, not part of
+        mock data generation)
+
+    Components: 25 (5 ApexClass + 5 Flow + 5 FlowDefinition + 5 GenAiFunction
+    + 5 GenAiPlugin + 6 GenAiPromptTemplate). RFP_Analysis plugin and
+    Launch_RFP_Analysis_Flow function are excluded; if those are restored
+    upstream, this manifest must be updated explicitly.
+
+    Maintained alongside the engine source — when generators are added or
+    removed upstream, update this manifest in the same commit.
+
+    First validation: deployment 0Afg7000003nkrBCAQ to SDGovSPIKE org
+    (Candidate A subtree-split install, May 2026 spike).
+-->
+
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>CaseGenerator</members>
+        <members>ContactGenerator</members>
+        <members>EmailCreatorFromAI</members>
+        <members>KnowledgeArticleGenerator</members>
+        <members>TaskEventGenerator</members>
+        <name>ApexClass</name>
+    </types>
+    <types>
+        <members>AI_Email_Generator</members>
+        <members>Case_Generator_Flow</members>
+        <members>Contact_Generator_Flow</members>
+        <members>Knowledge_Article_Generator_Flow</members>
+        <members>Task_Event_Generator_Flow</members>
+        <name>Flow</name>
+    </types>
+    <types>
+        <members>AI_Email_Generator</members>
+        <members>Case_Generator_Flow</members>
+        <members>Contact_Generator_Flow</members>
+        <members>Knowledge_Article_Generator_Flow</members>
+        <members>Task_Event_Generator_Flow</members>
+        <name>FlowDefinition</name>
+    </types>
+    <types>
+        <members>AI_Email_Generator</members>
+        <members>Generate_Case_Data</members>
+        <members>Generate_Contact_Data</members>
+        <members>Generate_Knowledge_Article_Data</members>
+        <members>Generate_Task_Event_Data</members>
+        <name>GenAiFunction</name>
+    </types>
+    <types>
+        <members>Mock_Case_Generation</members>
+        <members>Mock_Contact_Generation</members>
+        <members>Mock_Email_Generation</members>
+        <members>Mock_Knowledge_Article_Generation</members>
+        <members>Mock_Task_Event_Generation</members>
+        <name>GenAiPlugin</name>
+    </types>
+    <types>
+        <members>Case_Generator</members>
+        <members>Contact_Generator</members>
+        <members>Generate_Email_Data_From_Request</members>
+        <members>Generate_Mock_Activity_Data</members>
+        <members>Knowledge_Article_Generator</members>
+        <members>Task_Event_Generator</members>
+        <name>GenAiPromptTemplate</name>
+    </types>
+    <version>64.0</version>
+</Package>
