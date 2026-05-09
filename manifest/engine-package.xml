@@ -19,6 +19,10 @@
 
     First validation: deployment 0Afg7000003nkrBCAQ to SDGovSPIKE org
     (Candidate A subtree-split install, May 2026 spike).
+
+    Subtree-pull mechanic verified: throwaway repo at /tmp/ tested install
+    via `git subtree split` then `git subtree add`, then `git subtree pull`
+    after this comment landed via PR. Both legs succeeded.
 -->
 
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
