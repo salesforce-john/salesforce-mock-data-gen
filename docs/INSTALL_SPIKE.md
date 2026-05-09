@@ -85,7 +85,7 @@ In the SDGovernment spike, both the engine and SDGov had a `force-app/main/defau
 
 - **Layout-clean:** engine's `force-app/main/default/` content lands at customer's `force-app/main/default/`, no nesting weirdness, files at standard SFDX paths.
 - **Trace-able:** lineage is preserved in commit metadata; you can inspect what came from engine vs project.
-- **Update-able:** with `git subtree add`, future engine updates flow in via `git subtree pull --squash`. Single command.
+- **Update-able:** with the split-then-add install pattern, future engine updates flow in via `git subtree split` + `git subtree pull --squash` (two commands; see "Future updates" above). The pull operation handles the actual content transfer cleanly.
 - **Reversible:** `git reset --hard <pre-install-commit>` returns to baseline cleanly.
 
 Copy-and-namespace and 2GP unlocked package were not formally tried because Candidate A succeeded on first attempt. They remain documented in the plan as fallback options if subtree fails on a customer project with structural reasons (e.g., complex multi-package-directory `sfdx-project.json`).
@@ -167,7 +167,26 @@ Scenarios 1–3 are recovery patterns drawn from documented `git subtree` behavi
    - **Action on detection:** halt with a clear message (`Engine appears already installed at force-app/main/default/classes/<file>.cls. Skip-with-message; if reinstall is intended, remove existing engine files and rerun.`). Do not attempt to re-run `git subtree add` or `git subtree pull`.
    - **Edge case — partial install:** if *some but not all* generator classes exist, treat as detected (halt). The operator must reconcile manually before the skill can proceed; auto-merging a partial install with engine main risks silent overwrites of customer customizations.
    - **Why file-presence over hash-match:** hash-matching against current engine main creates false negatives when the engine evolves (a legit prior install becomes "out of date" and trips reinstall). File presence is a stable signal of "this project owns engine code"; the *update* path (subtree pull) is the right way to refresh, not reinstall.
-   - **What "skip-with-message" means in the skill:** the workflow does not advance past the install step. Operator chooses whether to use the skill's update subworkflow (subtree pull), accept the divergence, or remove and reinstall.
+   - **What "skip-with-message" means in the skill:** the workflow does not advance past the install step. Operator chooses one of three documented recovery paths below.
+
+   **Reconciliation recipes (when the skill halts on detection):**
+
+   The operator's choice depends on the *shape* of the existing install. The skill should ask which case applies before proceeding.
+
+   - **Case A — full install, want to update.** All five generator classes present and the squash commit carries subtree-tracking metadata (check with `git log --grep='git-subtree-dir' force-app/main/default/`). This is a healthy install; the operator wanted "update" not "install." Skill routes to the future-updates flow (`git subtree split` + `git subtree pull --squash`) instead. No destructive action.
+
+   - **Case B — full install, no subtree metadata** (manual-merge install, e.g. SDGov's spike approach). All five classes present but `git log --grep='git-subtree-dir'` is empty. Skill cannot use `git subtree pull` here. Two sub-paths:
+     - **B.1 (preferred): switch to manual-merge updates.** Use the Scenario 1 recovery in the *Merge conflict recovery* section above. Acknowledges the install shape and uses `git merge -s subtree` for all future updates.
+     - **B.2 (only if friendly pulls are required): destructive reinstall.** Back up customer customizations to `/tmp/<project>-customizations/` first (any project-namespaced classes, customer prompt template edits, anything outside engine-prefixed paths). Then `git rm` engine-prefixed files (the manifest is the inventory), commit, and re-run the documented split-then-add install. Restore customizations as a separate follow-up commit.
+
+   - **Case C — partial install** (1–4 generator classes present, or generator classes present but `genAiPlugins/Mock_*.genAiPlugin-meta.xml` missing, or any other shape that doesn't match a clean install). Skill cannot proceed safely. Operator triages:
+     - **Were the existing classes hand-copied by an SE pre-skill?** Migrate them to project-namespaced clones first (e.g., rename `ContactGenerator.cls` → `<Slug>_ContactGenerator.cls`, update all internal references). Then run the full install fresh. The original customer-edit lives in the namespaced clone; the engine's `ContactGenerator.cls` lands clean.
+     - **Were the existing classes a partial subtree pull that errored?** Inspect `git log` for prior subtree commits. If found, treat as Case B. If not, treat as hand-copy (above).
+     - **Don't know how they got there?** Run `git log --follow force-app/main/default/classes/ContactGenerator.cls` to find the introducing commit. Look at the commit message and author; ask the SE who made it. Do not auto-resolve.
+
+   - **Case D — engine-prefixed files present in source but no commits in `git log` reference them** (e.g., files were copy-pasted into the working tree but never committed). Skill should detect this via `git ls-files force-app/main/default/classes/ | grep -E '(Contact|Case|Email|Knowledge|TaskEvent)Generator\.cls'` returning empty while the disk has the files. Halt with a different message (`engine-prefixed files exist on disk but are uncommitted; commit or remove before installing`). Forces the operator into a consistent state before the skill proceeds.
+
+   The `mock-data-engine` skill's CP-3 implementation should encode these cases in its precondition check, with clear branching messages for each.
 
 3. **`git subtree pull` will surface upstream divergences as merge conflicts.** Example: PR #3 in this fork removed `RFP_Analysis.genAiPlugin-meta.xml` and `Launch_RFP_Analysis_Flow/` (orphan capability). If a customer project somehow has those files locally (e.g., from a prior subtree pull when they existed upstream), the next `git subtree pull` will delete them — which is correct, but worth knowing. Conversely, if upstream Dylan ever adds files this fork doesn't want, customer projects pulling from upstream Dylan instead of this fork would import unwanted files. **The fork's `main` is the source of truth for customer projects, never `dylandersen/salesforce-mock-data-gen` directly.**
 
