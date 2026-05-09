@@ -10,40 +10,111 @@
 
 Prove how the engine's deployable metadata (`force-app/main/default/`) lands in a customer demo project that has its own existing SFDX layout. The candidates evaluated were git subtree split + filtered prefix, copy-and-namespace, and 2GP unlocked package. **Subtree (Candidate A) survived; recommended.**
 
-## Recommended install recipe (for use by the `mock-data-engine` skill in CP-3)
+## Recommended install recipe (for use by the `mock-data-engine` skill)
 
-**Important:** the engine repo's deployable metadata lives at `force-app/main/default/`. We need to install **only that subdirectory** at the customer project's `force-app/main/default/`, not the whole engine repo (which also contains `CLAUDE.md`, `manifest/`, `scripts/`, etc.). Naive `git subtree add --prefix=force-app/main/default engine main --squash` pulls the engine's *root* into the customer's prefix and produces a broken structure. The correct recipe uses `git subtree split` to extract just the deployable subdirectory first, then `git subtree add` from that local split branch.
+**The previous version of this section was wrong.** It documented `git subtree add --prefix=force-app/main/default engine-deployable --squash` as the standard recipe. That command works only against repos with **no existing content at the prefix**. Every real customer demo project has files at `force-app/main/default/` (custom fields, layouts, profiles, perm sets), and `git subtree add` refuses with `fatal: prefix 'force-app/main/default' already exists.` This was discovered during CP-5b's first real-world install attempt at SDGovernment on 2026-05-09. The throwaway-repo test that "verified" the original recipe was structurally different from a customer-project shape — it had no existing `force-app/main/default/` — so the failure mode was invisible.
+
+The corrected recipe branches on whether the customer project already has content at `force-app/main/default/`. **For all real customer demo projects, this is the populated case.** The empty case is documented for completeness but is not the standard customer-project path.
+
+### Standard path: populated `force-app/main/default/` (every customer demo project)
 
 ```bash
 cd /path/to/customer-project
-git remote add engine https://github.com/salesforce-john/salesforce-mock-data-gen.git
+git remote get-url engine 2>/dev/null || git remote add engine https://github.com/salesforce-john/salesforce-mock-data-gen.git
+git fetch engine main
+
+git subtree split --prefix=force-app/main/default refs/remotes/engine/main -b engine-deployable
+git read-tree --prefix=force-app/main/default/ -u engine-deployable
+git commit -m "chore: install mock-data-engine via read-tree"
+```
+
+`git read-tree --prefix=<dir>/ -u <tree>` explicitly places the split branch's tree into the customer's `force-app/main/default/`, adding new files alongside existing ones. **This works when the prefix is non-empty as long as no individual file paths collide.** The engine's deployable file names are sufficiently distinct from typical customer-project content (verified against SDGovernment, where the only shared directory was `genAiPlugins/` and the file names within differed) that path-level collisions are rare.
+
+### Edge case: empty `force-app/main/default/` (e.g., greenfield projects, throwaway test repos)
+
+```bash
+cd /path/to/customer-project
+git remote get-url engine 2>/dev/null || git remote add engine https://github.com/salesforce-john/salesforce-mock-data-gen.git
 git fetch engine main
 
 git subtree split --prefix=force-app/main/default refs/remotes/engine/main -b engine-deployable
 git subtree add --prefix=force-app/main/default engine-deployable --squash
 ```
 
-This produces three commits in the customer project: an initial split commit, a squashed engine-content commit, and a merge commit. The squashed commit carries the subtree-tracking footer (`git-subtree-dir: force-app/main/default` and `git-subtree-split: <engine-sha>`) that makes future `git subtree pull` work.
+`git subtree add` writes a subtree-tracking footer in the squashed commit (`git-subtree-dir: force-app/main/default`, `git-subtree-split: <engine-sha>`) which enables future `git subtree pull` for friendlier updates. **This is only available on the empty-prefix install path.** Read-tree-installed prefixes do not get this metadata; their update mechanics are different (see "Update mechanics" below).
 
-**Verified end-to-end on 2026-05-09** against a throwaway repo at `/tmp/subtree-recipe-test/` (since deleted): install command landed all 6 engine subdirectories (`classes/`, `flows/`, `flowDefinitions/`, `genAiFunctions/`, `genAiPlugins/`, `genAiPromptTemplates/`) at the correct paths under the customer's `force-app/main/default/`, with subtree metadata written.
+### Never use: `git merge -s subtree`
 
-### Future updates (after engine improvements upstream)
+```bash
+# DO NOT USE — silently lands files at wrong paths
+git merge -s subtree --squash --allow-unrelated-histories engine-deployable
+```
 
-Same split-first pattern, then pull from the local split branch:
+The `subtree` merge strategy uses heuristic path-matching to find the "best common tree." With the engine's flat split branch (no inherent prefix) merging into a populated customer project with deep directory nesting, git guesses unpredictably. A real-world reproduction at SDGovernment on 2026-05-09 landed engine files inside `.claude/skills/agentforce-observability/` — silently, with no warning. The only way to detect the misplacement was inspecting `git diff --cached --name-only` before commit. **This strategy is not viable for customer-project installs and must not appear in any operator workflow.**
+
+## Update mechanics
+
+The update path depends on which install path was used.
+
+### If installed via `git subtree add` (empty-prefix path)
+
+```bash
+cd /path/to/customer-project
+git fetch engine main
+git subtree split --prefix=force-app/main/default refs/remotes/engine/main -b engine-deployable-update
+git subtree pull --prefix=force-app/main/default . engine-deployable-update --squash
+```
+
+Verified working on 2026-05-09 against a throwaway repo using the engine's `.engine-version` marker file as the engine-side update. The subtree-tracking metadata footer makes this clean.
+
+### If installed via `git read-tree` (standard customer-project path)
+
+`git subtree pull` does not work — the read-tree install does not write subtree-tracking metadata, so subtree pull errors with `fatal: can't squash-merge: 'force-app/main/default' was never added.` Tested 2026-05-09. There is no clean equivalent to `git subtree pull` for read-tree installs.
+
+Two viable update paths, both validated 2026-05-09:
+
+**Update path A (recommended for read-tree installs): destructive re-read-tree.** Engine-owned files are never edited locally per the `mock-data-engine` skill's clone-and-rename customization discipline (project-namespaced classes own customer-specific edits, engine files stay pristine). Under that discipline, removing engine files and replacing them with a fresh read-tree is non-destructive in practice:
 
 ```bash
 cd /path/to/customer-project
 git fetch engine main
 
+# Remove engine-owned files (the engine inventory is the canonical list at manifest/engine-package.xml)
+git rm -rf force-app/main/default/classes/{Contact,Case,EmailCreatorFromAI,KnowledgeArticle,TaskEvent}Generator*.cls* \
+         force-app/main/default/flows/{AI_Email_Generator,Case_Generator_Flow,Contact_Generator_Flow,Knowledge_Article_Generator_Flow,Task_Event_Generator_Flow}.flow-meta.xml \
+         force-app/main/default/flowDefinitions/{AI_Email_Generator,Case_Generator_Flow,Contact_Generator_Flow,Knowledge_Article_Generator_Flow,Task_Event_Generator_Flow}.flowDefinition-meta.xml \
+         force-app/main/default/genAiFunctions/{AI_Email_Generator,Generate_Case_Data,Generate_Contact_Data,Generate_Knowledge_Article_Data,Generate_Task_Event_Data} \
+         force-app/main/default/genAiPlugins/Mock_*.genAiPlugin-meta.xml \
+         force-app/main/default/genAiPromptTemplates/{Case_Generator,Contact_Generator,Generate_Email_Data_From_Request,Generate_Mock_Activity_Data,Knowledge_Article_Generator,Task_Event_Generator}.genAiPromptTemplate-meta.xml
+
+git commit -m "chore: remove engine files for update"
+
 git subtree split --prefix=force-app/main/default refs/remotes/engine/main -b engine-deployable-update
-git subtree pull --prefix=force-app/main/default . engine-deployable-update --squash
+git read-tree --prefix=force-app/main/default/ -u engine-deployable-update
+git commit -m "chore: update mock-data-engine via read-tree"
 ```
 
-The `.` in the pull command refers to the local repo (where the split branch lives). This works only if the install used the same split-then-add pattern. **It does not work** if the install used a manual `git merge -s subtree` approach (no subtree-tracking metadata written). If a project somehow has a manual-merge-style install, future updates must continue using `git merge -s subtree -X subtree=force-app/main/default --squash --allow-unrelated-histories engine/main`. The `mock-data-engine` skill should detect this case and document the workaround.
+The `mock-data-engine` skill should automate this with a helper that reads the engine inventory from `manifest/engine-package.xml` and removes exactly those files.
 
-**Verified end-to-end on 2026-05-09**: a marker file (`force-app/main/default/.engine-version`) was added to engine main via PR #6, then pulled into the throwaway repo via the split-then-pull pattern. Pull merged cleanly, marker file landed at the expected path.
+**Update path B (one-time migration to tracked-subtree, optional but cleaner long-term):** Convert a read-tree install into a tracked-subtree install. After this one-time conversion, future updates work via `git subtree pull` (the friendlier path):
 
-If `git subtree pull` reports `Subtree is already at commit X`, the engine's `force-app/main/default/` had no new commits since the last pull (engine maintenance work outside that subdirectory — like manifest comment updates — does not flow into customer projects). This is expected behavior, not a failure.
+```bash
+cd /path/to/customer-project
+
+# Same engine-file removal as above
+git rm -rf <engine-files>
+git commit -m "chore: prepare for tracked-subtree migration"
+
+# Now the prefix is empty of engine content; subtree add succeeds
+git subtree split --prefix=force-app/main/default refs/remotes/engine/main -b engine-deployable
+git subtree add --prefix=force-app/main/default engine-deployable --squash
+```
+
+After this migration, future updates use the path documented under "If installed via `git subtree add`" above.
+
+### Update path that does NOT work: `git merge -s subtree --squash --allow-unrelated-histories`
+
+Tested 2026-05-09 against a read-tree install: produces add/add merge conflicts on every engine-owned file because git treats both copies as independent additions (no subtree lineage). Conflict resolution is per-file manual; not a viable workflow.
 
 ## Deploy command (use the scoped manifest, not source-dir)
 
@@ -85,7 +156,7 @@ In the SDGovernment spike, both the engine and SDGov had a `force-app/main/defau
 
 - **Layout-clean:** engine's `force-app/main/default/` content lands at customer's `force-app/main/default/`, no nesting weirdness, files at standard SFDX paths.
 - **Trace-able:** lineage is preserved in commit metadata; you can inspect what came from engine vs project.
-- **Update-able:** with the split-then-add install pattern, future engine updates flow in via `git subtree split` + `git subtree pull --squash` (two commands; see "Future updates" above). The pull operation handles the actual content transfer cleanly.
+- **Update-able:** future engine updates flow in via the path documented in *Update mechanics* above. The friendly path (`git subtree split` + `git subtree pull --squash`) requires the `git subtree add` install — only available on greenfield projects. The standard customer-project install via `git read-tree` uses a destructive re-read-tree update path (engine files removed, then re-installed from a fresh split). Less elegant; verified working.
 - **Reversible:** `git reset --hard <pre-install-commit>` returns to baseline cleanly.
 
 Copy-and-namespace and 2GP unlocked package were not formally tried because Candidate A succeeded on first attempt. They remain documented in the plan as fallback options if subtree fails on a customer project with structural reasons (e.g., complex multi-package-directory `sfdx-project.json`).
@@ -159,7 +230,7 @@ Scenarios 1–3 are recovery patterns drawn from documented `git subtree` behavi
 
 ## Caveats and known limits
 
-1. **First-install must use `git subtree add`, not manual `git merge -s subtree`.** Spike used the manual approach for layout-shape testing and discovered that the manual approach doesn't write subtree-tracking metadata, breaking `git subtree pull --squash`. SDGov was reset to baseline post-spike; the real install in CP-5b will use `git subtree add`.
+1. **Standard install uses `git read-tree`, not `git subtree add`** (corrected 2026-05-09 after CP-5b's first real-world install attempt at SDGovernment). `git subtree add` refuses populated prefixes with `fatal: prefix already exists`, which is the case for every real customer demo project. `git read-tree --prefix=...` is the working install command for populated repos. `git subtree add` is reserved for greenfield/empty-prefix repos. **`git merge -s subtree` is never used** — silent path-misplacement reproduced at SDGovernment.
 
 2. **Install idempotency contract for the `mock-data-engine` skill.** The customer project must not already have an engine install elsewhere in the tree. The skill detects existing install via this rule:
 
@@ -207,7 +278,7 @@ CP-0 verification items:
 - [x] One-pager exists and names the surviving install mechanism
 - [x] Spike branch was disposable; SDGov reset to baseline (`66cee46`) post-spike
 - [x] Verified cycle: install on disposable branch, deploy to disposable org (`SDGovSPIKE`), 25/25 components validated against deployment ID `0Afg7000003nkrBCAQ`
-- [x] **Recommended recipe verified end-to-end against a throwaway repo** (RT-A finding #1 closed). Install via split-then-add: marker file `force-app/main/default/.engine-version` (PR #6) was added to engine main, then pulled into the throwaway repo; pull merged cleanly with subtree-tracking metadata preserved. Throwaway repo at `/tmp/subtree-recipe-test/` deleted post-test.
+- [x] **Recipe verified against an empty throwaway repo** (RT-A finding #1 closed at the time). Install via split-then-add: marker file `force-app/main/default/.engine-version` was added to engine main, then pulled into the throwaway repo; pull merged cleanly with subtree-tracking metadata preserved. **Limitation surfaced 2026-05-09 during CP-5b:** the throwaway repo had no pre-existing `force-app/main/default/` content, so `git subtree add` succeeded. Real customer projects always have populated `force-app/main/default/` and `subtree add` refuses with `fatal: prefix already exists`. Recipe corrected to `git read-tree --prefix=...` for populated repos. See "Update mechanics" for the corresponding post-correction update path.
 - [x] Disposable demo org (`SDGovSPIKE`) noted; will not be used for customer demos
 - [x] Surviving mechanism documented (commands, manifest, file ownership table)
 - [x] Merge-conflict recovery commands documented for three likely failure modes (RT-A finding #2 closed). Recovery commands documented from `git subtree`/`git merge` behavior; not all reproduced in throwaway repos.
