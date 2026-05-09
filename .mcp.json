@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "salesforce-dx": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@salesforce/mcp@latest",
+        "--orgs",
+        "DEFAULT_TARGET_ORG",
+        "--toolsets",
+        "orgs,metadata,data,users,testing"
+      ]
+    },
+    "firecrawl-heroku": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "env": {
+        "FIRECRAWL_API_URL": "https://firecrawl-0076d0033d53.herokuapp.com"
+      }
+    },
+    "sf-docs": {
+      "command": "bash",
+      "args": [
+        "scripts/launch_sf_docs_mcp.sh"
+      ]
+    }
+  }
+}
